@@ -5,9 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 """
-Fixed 3D UNet implementation with direct utility implementations
-- Replaced external nn.utils imports with direct implementations
-- Maintains the same architecture and functionality
+3D UNet implementation 
+- replaced external nn.utils imports with direct implementations to isolate (not sure if this is needed, but I wanted the code to be self-contained)
+- follows orginal UNet architecture with downsampling and upsampling blocks
 """
 
 # utilities from original backbone
@@ -21,21 +21,21 @@ def conv_nd(dims, *args, **kwargs):
     else:
         raise ValueError(f"unsupported dimensions: {dims}")
 
-
 def normalization(channels):
     return nn.GroupNorm(32, channels)
 
 
-
 class Downsample(nn.Module):
+
     # downsampling layer with an optional convolution.
+
     def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
         self.dims = dims
-        stride = 2 if dims != 3 else (1, 2, 2)  # Don't downsample in Z dimension
+        stride = 2 if dims != 3 else (2, 2, 2)  # downsample in all 3 dimensions for 3D
         if use_conv:
             self.op = conv_nd(
                 dims, self.channels, self.out_channels, 3, stride=stride, padding=padding
@@ -43,7 +43,7 @@ class Downsample(nn.Module):
         else:
             assert self.channels == self.out_channels
             if dims == 3:
-                self.op = nn.AvgPool3d(kernel_size=(1, 2, 2), stride=(1, 2, 2))
+                self.op = nn.AvgPool3d(kernel_size=2, stride=2)
             else:
                 self.op = nn.AvgPool2d(kernel_size=stride, stride=stride)
 
@@ -53,9 +53,9 @@ class Downsample(nn.Module):
 
 
 class Upsample(nn.Module):
-    """
-    An upsampling layer with an optional convolution.
-    """
+
+    # an upsampling layer with an optional convolution.
+
     def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1):
         super().__init__()
         self.channels = channels
@@ -68,8 +68,8 @@ class Upsample(nn.Module):
     def forward(self, x):
         assert x.shape[1] == self.channels
         if self.dims == 3:
-            # Don't upsample in Z dimension, only in Y and X
-            x = F.interpolate(x, scale_factor=(1, 2, 2), mode="nearest")
+            # upsamples in all 3 dimensions for 3D (i changed the scale factor to 2 for all dims)
+            x = F.interpolate(x, scale_factor=(2, 2, 2), mode="nearest")
         else:
             x = F.interpolate(x, scale_factor=2, mode="nearest")
         if self.use_conv:
@@ -77,9 +77,8 @@ class Upsample(nn.Module):
         return x
 
 
-# Two consecutive 3D conv layers with normalization and SiLU activation
+# two consecutive 3D conv layers with normalization and SiLU activation
 def double_conv(in_channels, out_channels, mid_channels=None):
-    """Two consecutive 3D convolutions each followed by normalization and SiLU activation."""
     if mid_channels is None:
         mid_channels = out_channels
     return nn.Sequential(
@@ -94,14 +93,11 @@ def double_conv(in_channels, out_channels, mid_channels=None):
     )
 
 
-# Encoder block: downsampling followed by feature extraction
+# encoder block: downsampling followed by feature extraction
 class Down(nn.Module):
-    """Downscaling with non-learned downsample (avg pool) then double_conv."""
-    
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.op = nn.Sequential(
-            # reduce spatial dims by a factor of 2 in Y and X (no change along Z)
             Downsample(in_channels, use_conv=False, dims=3),
             # extract features after downsampling
             double_conv(in_channels, out_channels)
@@ -111,26 +107,23 @@ class Down(nn.Module):
         return self.op(x)
 
 
-# Decoder block: upsampling followed by skip-concatenation and feature extraction
+# decoder block: upsampling followed by skip-concatenation and feature extraction
 class Up(nn.Module):
-    """Upscaling then double_conv."""
-    
     def __init__(self, in_channels, out_channels, trilinear=True):
         super().__init__()
-        # Choose interpolation-based or learnable transpose-Conv upsampling
         if trilinear:
             self.up = Upsample(in_channels // 2, use_conv=False, dims=3)
             conv_in = in_channels  # channels after concatenation (skip + upsampled)
         else:
-            # Transpose conv increases spatial dims by factor 2
+            # transpose conv increases spatial dims by factor 2
             self.up = conv_nd(3, in_channels // 2, in_channels // 2, 2, stride=2)
             conv_in = in_channels
         self.conv = double_conv(conv_in, out_channels)
 
     def forward(self, x1, x2):
-        # Upsample the coarse feature map
+        # upsample the coarse feature map
         x1 = self.up(x1)
-        # Pad if needed to exactly match encoder feature map size
+        # pad if needed to exactly match encoder feature map size
         dz = x2.size(2) - x1.size(2)
         dy = x2.size(3) - x1.size(3)
         dx = x2.size(4) - x1.size(4)
@@ -145,9 +138,9 @@ class Up(nn.Module):
         return self.conv(x)
 
 
-# Final 1×1×1 convolution to map to desired output channels (segmentation classes)
+# final 1×1×1 convolution to map to desired output channels (segmentation classes)
 class OutConv(nn.Module):
-    """1×1×1 convolution to map to the desired number of classes."""
+    # 1×1×1 convolution to map to the desired number of classes
     
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -157,7 +150,7 @@ class OutConv(nn.Module):
         return self.conv(x)
 
 
-# Full UNet3D architecture: encoder path, bottleneck, decoder path
+# full UNet3D architecture: encoder path, bottleneck, decoder path
 class UNet3D(nn.Module):
     """
     3D UNet backbone with symmetric downsampling and upsampling paths.
@@ -207,7 +200,7 @@ if __name__ == "__main__":
     model = UNet3D(in_channels=1, out_channels=2, base_filters=32, trilinear=True)
     x = th.randn(1, 1, 16, 32, 32)
     y = model(x)
-    print("Input shape :", x.shape)
-    print("Output shape:", y.shape)
-    assert y.shape == (1, 2, 16, 32, 32), "Shape mismatch!"
-    print("✅ UNet3D smoke test passed!")
+    print("input shape :", x.shape)
+    print("output shape:", y.shape)
+    assert y.shape == (1, 2, 16, 32, 32), "shape mismatch!"
+    print("smoke test success")
