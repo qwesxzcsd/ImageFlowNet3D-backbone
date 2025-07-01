@@ -72,7 +72,7 @@ class ImageFlowNetODE(BaseNetwork):
 
         # Record the channel dimensions by passing in a dummy tensor.
         self.dim_list = []
-        h_dummy = torch.zeros((1, 1, image_size, image_size)).type(self.unet.dtype)
+        h_dummy = torch.zeros((1, in_channels, image_size, image_size)).type(self.unet.dtype)
         t_dummy = torch.zeros((1)).type(self.unet.dtype)
         emb = self.unet.time_embed(timestep_embedding(t_dummy, self.unet.model_channels))
         for module in self.unet.input_blocks:

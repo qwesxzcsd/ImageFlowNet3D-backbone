@@ -195,12 +195,76 @@ class UNet3D(nn.Module):
         return self.outc(x)
 
 
-# smoke test to verify the model can handle a random 3D tensor
+# smoke tests to verify the model can handle a random 3D tensor
 if __name__ == "__main__":
+    # single tensor
     model = UNet3D(in_channels=1, out_channels=2, base_filters=32, trilinear=True)
     x = th.randn(1, 1, 16, 32, 32)
     y = model(x)
-    print("input shape :", x.shape)
-    print("output shape:", y.shape)
-    assert y.shape == (1, 2, 16, 32, 32), "shape mismatch!"
-    print("smoke test success")
+    print("single tensor test input shape:", x.shape, "output shape:", y.shape)
+    assert y.shape == (1, 2, 16, 32, 32), "shape mismatch"
+    print("single tensor passed")
+
+    # random 3D dataset check
+    from torch.utils.data import Dataset, DataLoader
+
+    class Random3DDataset(Dataset):
+        """
+        random 3D volumes datasets
+        each sample is an x tensor of shape (1, D, H, W) and y mask of shape (D, H, W).
+        """
+        def __init__(self, length=4, depth=16, height=32, width=32, num_classes=2):
+            self.length = length
+            self.depth = depth
+            self.height = height
+            self.width = width
+            self.num_classes = num_classes
+
+        def __len__(self):
+            return self.length
+
+        def __getitem__(self, idx):
+            # random volume and integer mask
+            x = th.randn(1, self.depth, self.height, self.width)
+            y = th.randint(0, self.num_classes, (self.depth, self.height, self.width))
+            return x, y
+
+    # instantiate DataLoader
+    dataset = Random3DDataset(length=4)
+    loader = DataLoader(dataset, batch_size=2)
+
+    # iterate one batch through the model
+    x_batch, y_batch = next(iter(loader))
+    print("dataset batch x:", x_batch.shape, "y:", y_batch.shape)
+    pred_batch = model(x_batch)
+    print("model output on batch:", pred_batch.shape)
+    assert (pred_batch.shape[0] == x_batch.shape[0] and pred_batch.shape[2:] == x_batch.shape[2:]), "Batch shape mismatch!"
+    print("random dataset passed")
+
+
+    # backward-pass check
+    # creates a dummy loss
+    loss_fn = nn.CrossEntropyLoss()
+    # y_batch shape is (N, D, H, W), pred_batch is (N, C, D, H, W)
+    loss = loss_fn(pred_batch, y_batch)
+    print(f"computed loss: {loss.item()}")
+    loss.backward()
+    # verifies that at least one parameter has non-zero gradient
+    grads = [p.grad.abs().sum().item() for p in model.parameters() if p.grad is not None]
+    assert any(g > 0 for g in grads), "no gradients"
+    print("backward pass check passed")
+
+    # regression backward check (MSE) (used to better understand MSE vs crossentropy, don't need to sanity check two different loss fucnctions)
+    # instantiate model for regression
+    model_reg = UNet3D(in_channels=1, out_channels=1, base_filters=32, trilinear=True)
+    # generate dummy continuous target of same shape as predicted
+    x_reg = th.randn(2, 1, 16, 32, 32)
+    y_true = th.randn(2, 1, 16, 32, 32)
+    pred_reg = model_reg(x_reg)
+    # MSE loss
+    mse_loss = nn.MSELoss()(pred_reg, y_true)
+    print(f"computed MSE loss: {mse_loss.item()}")
+    mse_loss.backward()
+    grads_reg = [p.grad.abs().sum().item() for p in model_reg.parameters() if p.grad is not None]
+    assert any(g > 0 for g in grads_reg), "fails check"
+    print("MSE check passed")

@@ -83,6 +83,8 @@ def train(config: AttributeHashmap):
 
     train_set, val_set, test_set, num_image_channel, max_t = \
         prepare_dataset(config=config, transforms_list=transforms_list)
+    print(f"[DEBUG] prepare_dataset returned max_t = {max_t}")
+
 
     log('Using device: %s' % device, to_console=True)
 
@@ -1054,8 +1056,12 @@ if __name__ == '__main__':
 
     parser.add_argument('--dataset-name', default='retina_ucsf', type=str)
     parser.add_argument('--target-dim', default='(256, 256)', type=ast.literal_eval)
-    # parser.add_argument('--dataset-path', default='$ROOT/data/retina_ucsf/', type=str)
-    # parser.add_argument('--image-folder', default='UCSF_images_final_512x512', type=str)
+    parser.add_argument('--dataset-path', default='../data/synthesized/', type=str)
+
+    parser.add_argument('--image-folder',default='images', type=str)
+    parser.add_argument('--mask-folder', default='masks',  type=str)
+    parser.add_argument('--subset',      default='base',   type=str, help="Which synthetic variation: base/rotation/translation")
+
     parser.add_argument('--output-save-folder', default='$ROOT/results/', type=str)
     parser.add_argument('--segmentor-ckpt', default='$ROOT/checkpoints/segment_retinaUCSF_seed1.pty', type=str)
 
