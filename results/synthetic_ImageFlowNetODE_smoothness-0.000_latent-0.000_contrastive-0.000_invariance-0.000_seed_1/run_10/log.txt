@@ -1,0 +1,44 @@
+Config: 
+mode: train
+gpu_id: 0
+run_count: None
+dataset_name: synthetic
+target_dim: (256, 256)
+dataset_path: C:/Users/ethan/imageflownet/data/synthesized
+image_folder: images
+mask_folder: masks
+subset: base
+output_save_folder: C:/Users/ethan/imageflownet/results/
+segmentor_ckpt: /checkpoints/segment_retinaUCSF_seed1.pty
+model: ImageFlowNetODE
+random_seed: 1
+learning_rate: 0.0001
+max_epochs: 1
+batch_size: 64
+ode_max_t: 5.0
+ode_location: all_connections
+depth: 5
+num_filters: 64
+diffusion_interval: 100
+num_workers: 8
+train_val_test_ratio: 6:2:2
+max_training_samples: 1
+max_validation_samples: 1
+max_testing_samples: 500
+n_plot_per_epoch: 1
+no_l2: False
+coeff_smoothness: 0
+coeff_latent: 0
+coeff_contrastive: 0
+coeff_invariance: 0
+pretrained_vision_model: convnext_tiny
+save_folder: C:/Users/ethan/imageflownet/results//synthetic_ImageFlowNetODE_smoothness-0.000_latent-0.000_contrastive-0.000_invariance-0.000_seed_1/run_10/
+model_save_path: C:/Users/ethan/imageflownet/results//synthetic_ImageFlowNetODE_smoothness-0.000_latent-0.000_contrastive-0.000_invariance-0.000_seed_1/run_10/synthetic_ImageFlowNetODE_smoothness-0.000_latent-0.000_contrastive-0.000_invariance-0.000_seed_1.pty
+log_dir: C:/Users/ethan/imageflownet/results//synthetic_ImageFlowNetODE_smoothness-0.000_latent-0.000_contrastive-0.000_invariance-0.000_seed_1/run_10/log.txt
+
+Training History:
+[Epoch 1] Will not train the time-dependent modules until the reconstruction is good enough.
+Train [1/1] loss [recon: 6.477, pred: 2.935], PSNR (recon): 22.268, SSIM (recon): 0.356, PSNR (pred): 23.339, SSIM (pred): 0.229
+Validation [1/1] PSNR (recon): 27.695, SSIM (recon): 0.725, PSNR (pred): 27.664, SSIM (pred): 0.722, Dice(xT_true, xT_pred): 0.000, Dice(x0_true, xT_true): 1.935.
+ImageFlowNetODE: Model weights successfully saved for best pred PSNR.
+ImageFlowNetODE: Model weights successfully saved for best dice xT.

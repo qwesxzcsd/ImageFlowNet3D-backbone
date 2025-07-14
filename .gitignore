@@ -17,5 +17,5 @@ data
 
 # Slurm jobs
 **/*.out
-**/bash_*"*.pty" 
+**/bash_*
 "*.pty" 
