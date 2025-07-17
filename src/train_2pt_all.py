@@ -2,12 +2,10 @@ import os
 import sys
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-i2sb_root = os.path.join(project_root, 'external_src', 'I2SB')
-sys.path.insert(0, i2sb_root)
+sys.path.insert(0, project_root)
 
 import argparse
 import ast
-
 import cv2
 from typing import Tuple
 
@@ -38,11 +36,11 @@ from nn.imageflownet_ode import ImageFlowNetODE
 from nn.imageflownet_sde import ImageFlowNetSDE
 from nn.unet_t_emb import T_UNet
 from nn.unet_i2sb import I2SBUNet
+from nn.backbone_unet_3d import UNet3D
 from nn.off_the_shelf_encoder import VisionEncoder
 
 
-import_dir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
-sys.path.insert(0, import_dir + '/external_src/I2SB/')
+sys.path.insert(0, os.path.join(project_root, 'external_src', 'I2SB'))
 from i2sb.diffusion import Diffusion
 from i2sb.runner import make_beta_schedule
 
@@ -104,22 +102,29 @@ def train(config: AttributeHashmap):
         diffusion = Diffusion(betas, device)
         kwargs = {'step_to_t': step_to_t, 'diffusion': diffusion}
 
-    try:
-        model = globals()[config.model](device=device,
-                                        num_filters=config.num_filters,
-                                        depth=config.depth,
-                                        ode_location=config.ode_location,
-                                        in_channels=num_image_channel,
-                                        out_channels=num_image_channel,
-                                        contrastive=config.coeff_contrastive + config.coeff_invariance > 0,
-                                        **kwargs)
-    except:
-        raise ValueError('`config.model`: %s not supported.' % config.model)
+    if config.model == 'UNet3D':
+        model = UNet3D(in_channels=num_image_channel,
+                       out_channels=num_image_channel,
+                       base_filters=config.num_filters,
+                       trilinear=True).to(device)
+    else:
+        try:
+            model = globals()[config.model](device=device,
+                                            num_filters=config.num_filters,
+                                            depth=config.depth,
+                                            ode_location=config.ode_location,
+                                            in_channels=num_image_channel,
+                                            out_channels=num_image_channel,
+                                            contrastive=config.coeff_contrastive + config.coeff_invariance > 0,
+                                            **kwargs)
+        except KeyError:
+            raise ValueError(f'`config.model`: {config.model} not supported.')
 
     ema = ExponentialMovingAverage(model.parameters(), decay=0.9)
 
     model.to(device)
-    model.init_params()
+    if hasattr(model, "init_params"):
+        model.init_params()
     ema.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
@@ -241,10 +246,14 @@ def train_epoch(config: AttributeHashmap,
 
         ################### Recon Loss to update Encoder/Decoder ##################
         # Unfreeze the model.
-        model.unfreeze()
-
-        x_start_recon = model(x=x_start_noisy, t=torch.zeros(1).to(device))
-        x_end_recon = model(x=x_end_noisy, t=torch.zeros(1).to(device))
+        if hasattr(model, "unfreeze"):
+            model.unfreeze()
+        if config.model == 'UNet3D':
+            x_start_recon = model(x_start_noisy)
+            x_end_recon   = model(x_end_noisy)
+        else:
+            x_start_recon = model(x=x_start_noisy, t=torch.zeros(1).to(device))
+            x_end_recon   = model(x=x_end_noisy,   t=torch.zeros(1).to(device))
 
         latent_loss, contrastive_loss, invariance_loss = 0, 0, 0
         if config.coeff_latent > 0:
@@ -295,7 +304,11 @@ def train_epoch(config: AttributeHashmap,
                 # Regularize on ODE trajectory smoothness via vector field Lipschitz continuity.
                 x_end_pred, smoothness_loss = model(x=x_start_noisy, t=torch.diff(t_list) * config.t_multiplier, return_grad=True)
             else:
-                x_end_pred = model(x=x_start_noisy, t=torch.diff(t_list) * config.t_multiplier)
+                if config.model == 'UNet3D':
+                    x_end_pred = model(x_start_noisy)
+                else:
+                    x_end_pred = model(x=x_start_noisy, t=torch.diff(t_list) * config.t_multiplier)
+
 
             if config.coeff_latent > 0:
                 # Regularize on latent embedding of image.
@@ -317,7 +330,10 @@ def train_epoch(config: AttributeHashmap,
         else:
             # Will not train the time-dependent modules until the reconstruction is good enough.
             with torch.no_grad():
-                x_end_pred = model(x=x_start_noisy, t=torch.diff(t_list) * config.t_multiplier)
+                if config.model == 'UNet3D':
+                    x_end_pred = model(x_start_noisy)
+                else:
+                    x_end_pred = model(x=x_start_noisy, t=torch.diff(t_list) * config.t_multiplier)
                 loss_pred = mse_loss(x_end, x_end_pred)
                 train_loss_pred += loss_pred.item()
 
@@ -486,7 +502,7 @@ def val_epoch(config: AttributeHashmap,
     if os.path.isfile(config.segmentor_ckpt):
         segmentor = torch.nn.Sequential(
             monai.networks.nets.DynUNet(
-                spatial_dims=2,
+                spatial_dims=3, # 3d
                 in_channels=1,
                 out_channels=1,
                 kernel_size=[5, 5, 5, 5],
@@ -517,9 +533,14 @@ def val_epoch(config: AttributeHashmap,
         x_list, t_list = convert_variables(images, timestamps, device)
         x_start, x_end = x_list
 
-        x_start_recon = model(x=x_start, t=torch.zeros(1).to(device))
-        x_end_recon = model(x=x_end, t=torch.zeros(1).to(device))
-        x_end_pred = model(x=x_start, t=torch.diff(t_list) * config.t_multiplier)
+        if config.model == 'UNet3D':
+            x_start_recon = model(x_start)
+            x_end_recon   = model(x_end)
+            x_end_pred    = model(x_start)
+        else:
+            x_start_recon = model(x=x_start, t=torch.zeros(1).to(device))
+            x_end_recon   = model(x=x_end,   t=torch.zeros(1).to(device))
+            x_end_pred    = model(x=x_start, t=torch.diff(t_list)*config.t_multiplier)
 
         x_start_seg = segmentor(x_start) > 0.5
         x_end_seg = segmentor(x_end) > 0.5
@@ -661,39 +682,63 @@ def val_epoch_I2SB(config: AttributeHashmap,
     return val_recon_psnr, val_pred_psnr, val_seg_dice_xT
 
 @torch.no_grad()
+
 def test(config: AttributeHashmap):
     device = torch.device(
         'cuda:%d' % config.gpu_id if torch.cuda.is_available() else 'cpu')
     train_set, val_set, test_set, num_image_channel, max_t = \
         prepare_dataset(config=config)
 
-    # Build the model
     kwargs = {}
     if config.model == 'I2SBUNet':
         step_to_t = torch.linspace(1e-4, 1, config.diffusion_interval, device=device) * config.diffusion_interval
-        betas = make_beta_schedule(n_timestep=config.diffusion_interval, linear_end=1 / config.diffusion_interval)
-        betas = np.concatenate([betas[:config.diffusion_interval//2], np.flip(betas[:config.diffusion_interval//2])])
+        betas = make_beta_schedule(n_timestep=config.diffusion_interval,
+                                   linear_end=1 / config.diffusion_interval)
+        betas = np.concatenate([
+            betas[: config.diffusion_interval // 2],
+            np.flip(betas[: config.diffusion_interval // 2])])
         diffusion = Diffusion(betas, device)
         kwargs = {'step_to_t': step_to_t, 'diffusion': diffusion}
 
-    try:
-        model = globals()[config.model](device=device,
-                                        num_filters=config.num_filters,
-                                        depth=config.depth,
-                                        ode_location=config.ode_location,
-                                        in_channels=num_image_channel,
-                                        out_channels=num_image_channel,
-                                        contrastive=config.coeff_contrastive + config.coeff_invariance > 0,
-                                        **kwargs)
-    except:
-        raise ValueError('`config.model`: %s not supported.' % config.model)
+    # Build the model
+    if config.model == 'UNet3D':
+        model = UNet3D(
+            in_channels  = num_image_channel,
+            out_channels = num_image_channel,
+            base_filters = config.num_filters,
+            trilinear    = True)
+        
+    elif config.model == 'I2SBUNet':
+        model = I2SBUNet(
+            device        = device,
+            num_filters   = config.num_filters,
+            depth         = config.depth,
+            ode_location  = config.ode_location,
+            in_channels   = num_image_channel,
+            out_channels  = num_image_channel,
+            contrastive   = (config.coeff_contrastive + config.coeff_invariance) > 0,
+            **kwargs)
+        
+    else:
+        model = globals()[config.model](
+            device        = device,
+            num_filters   = config.num_filters,
+            depth         = config.depth,
+            ode_location  = config.ode_location,
+            in_channels   = num_image_channel,
+            out_channels  = num_image_channel,
+            contrastive   = (config.coeff_contrastive + config.coeff_invariance) > 0,
+            **kwargs)
+        
+    if hasattr(model, "init_params"):
+        model.init_params()
+    model = model.to(device)
 
-    model.to(device)
-
+    sd = 3 if config.model == 'UNet3D' else 2 # use 3 for 3d model, 2 for 2d
     if os.path.isfile(config.segmentor_ckpt):
         segmentor = torch.nn.Sequential(
             monai.networks.nets.DynUNet(
-                spatial_dims=2,
+                spatial_dims=sd,
                 in_channels=1,
                 out_channels=1,
                 kernel_size=[5, 5, 5, 5],
@@ -764,9 +809,14 @@ def test(config: AttributeHashmap):
                 x_end_recon = x_end_recon[:, -1, ...].to(device)
                 x_end_pred = x_end_pred[:, -1, ...].to(device)
             else:
-                x_start_recon = model(x=x_start, t=torch.zeros(1).to(device))
-                x_end_recon = model(x=x_end, t=torch.zeros(1).to(device))
-                x_end_pred = model(x=x_start, t=torch.diff(t_list) * config.t_multiplier)
+                if config.model == 'UNet3D':
+                    x_start_recon = model(x_start)
+                    x_end_recon   = model(x_end)
+                    x_end_pred    = model(x_start)
+                else:
+                    x_start_recon = model(x=x_start, t=torch.zeros(1).to(device))
+                    x_end_recon   = model(x=x_end,   t=torch.zeros(1).to(device))
+                    x_end_pred    = model(x=x_start, t=torch.diff(t_list)*config.t_multiplier)
 
             loss_recon = mse_loss(x_start, x_start_recon) + mse_loss(x_end, x_end_recon)
             loss_pred = mse_loss(x_end, x_end_pred)
@@ -927,10 +977,27 @@ def convert_variables(images: torch.Tensor,
         return [x_start, x_end], t_list
 
 def numpy_variables(*tensors: torch.Tensor) -> Tuple[np.array]:
-    '''
-    Some repetitive numpy casting of variables.
-    '''
-    return [_tensor.cpu().detach().numpy().squeeze(0).transpose(1, 2, 0) for _tensor in tensors]
+    """
+    Convert a batch of Tensors to numpy, handling both 2D (C,H,W) and 3D (C,D,H,W) volumes.
+    If the tensor has depth, we take the central slice along D.
+    Returns a list of H×W×C arrays.
+    """
+    arrays = []
+    for t in tensors:
+        arr = t.cpu().detach().numpy()          # (1, C, H, W) or (1, C, D, H, W)
+        arr = arr.squeeze(0)                    # (C, H, W) or (C, D, H, W)
+        if arr.ndim == 3:
+            # 2D case: C×H×W → H×W×C
+            arrays.append(np.transpose(arr, (1, 2, 0)))
+        elif arr.ndim == 4:
+            # 3D case: C×D×H×W → pick central slice at depth d0
+            C, D, H, W = arr.shape
+            d0 = D // 2
+            slice_cdhw = arr[:, d0, :, :]      # (C, H, W)
+            arrays.append(np.transpose(slice_cdhw, (1, 2, 0)))
+        else:
+            raise ValueError(f"Unsupported tensor ndim={arr.ndim}")
+    return tuple(arrays)
 
 def cast_to_0to1(*np_arrays: np.array) -> Tuple[np.array]:
     '''

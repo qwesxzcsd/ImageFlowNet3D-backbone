@@ -40,6 +40,15 @@ def prepare_dataset(config: AttributeHashmap, transforms_list = [None, None, Non
             target_dim   = config.target_dim)
         Subset = SyntheticSubset
 
+    elif config.dataset_name in ('synthesized_3d'):
+        dataset = SyntheticDataset(
+            base_path    = config.dataset_path,
+            subset       = config.subset,
+            image_folder = config.image_folder,
+            mask_folder  = config.mask_folder,
+            target_dim   = config.target_dim)
+        Subset = SyntheticSubset
+
     else:
         raise ValueError(
             'Dataset not found. Check `dataset_name` in config yaml file.')
