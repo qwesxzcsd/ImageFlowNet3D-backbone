@@ -1,0 +1,42 @@
+Config: 
+mode: train
+gpu_id: 0
+run_count: None
+dataset_name: synthesized_3d
+target_dim: (64, 64, 64)
+dataset_path: data/synthesized_3d
+image_folder: images
+mask_folder: masks
+subset: base
+output_save_folder: results\smoke_test
+segmentor_ckpt: /checkpoints/segment_retinaUCSF_seed1.pty
+model: UNet3D
+random_seed: 1
+learning_rate: 0.0001
+max_epochs: 1
+batch_size: 2
+ode_max_t: 5.0
+ode_location: all_connections
+depth: 5
+num_filters: 64
+diffusion_interval: 100
+num_workers: 8
+train_val_test_ratio: 6:2:2
+max_training_samples: 10
+max_validation_samples: 5
+max_testing_samples: 5
+n_plot_per_epoch: 4
+no_l2: False
+coeff_smoothness: 0
+coeff_latent: 0
+coeff_contrastive: 0
+coeff_invariance: 0
+pretrained_vision_model: convnext_tiny
+save_folder: results\smoke_test/synthesized_3d_UNet3D_smoothness-0.000_latent-0.000_contrastive-0.000_invariance-0.000_seed_1/run_1/
+model_save_path: results\smoke_test/synthesized_3d_UNet3D_smoothness-0.000_latent-0.000_contrastive-0.000_invariance-0.000_seed_1/run_1/synthesized_3d_UNet3D_smoothness-0.000_latent-0.000_contrastive-0.000_invariance-0.000_seed_1.pty
+log_dir: results\smoke_test/synthesized_3d_UNet3D_smoothness-0.000_latent-0.000_contrastive-0.000_invariance-0.000_seed_1/run_1/log.txt
+
+Training History:
+[Epoch 1] Will not train the time-dependent modules until the reconstruction is good enough.
+Train [1/1] loss [recon: 1.090, pred: 0.545], PSNR (recon): 20.018, SSIM (recon): 0.728, PSNR (pred): 20.016, SSIM (pred): 0.729
+Validation [1/1] PSNR (recon): 17.555, SSIM (recon): 0.462, PSNR (pred): 17.642, SSIM (pred): 0.401, Dice(xT_true, xT_pred): 0.710, Dice(x0_true, xT_true): 0.820.

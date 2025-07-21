@@ -193,6 +193,13 @@ class UNet3D(nn.Module):
         x  = self.up4(x,  x1)
         # output projection
         return self.outc(x)
+    
+    def save_weights(self, path: str):
+        th.save(self.state_dict(), path)
+
+    def load_weights(self, path: str, device=None):
+        sd = th.load(path, map_location=device)
+        self.load_state_dict(sd)
 
 
 # smoke tests to verify the model can handle a random 3D tensor

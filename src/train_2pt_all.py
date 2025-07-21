@@ -2,7 +2,8 @@ import os
 import sys
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.join(project_root, 'src'))
+sys.path.insert(0, os.path.join(project_root, 'external_src', 'I2SB'))
 
 import argparse
 import ast
@@ -40,7 +41,6 @@ from nn.backbone_unet_3d import UNet3D
 from nn.off_the_shelf_encoder import VisionEncoder
 
 
-sys.path.insert(0, os.path.join(project_root, 'external_src', 'I2SB'))
 from i2sb.diffusion import Diffusion
 from i2sb.runner import make_beta_schedule
 
