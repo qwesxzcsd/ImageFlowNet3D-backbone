@@ -135,13 +135,13 @@ if __name__ == '__main__':
             moving_scan = scan_list[scan_idx]
             moving_mask = mask_list[scan_idx]
 
-            fixed_ants = ants.from_numpy(fixed_scan)
+            fixed_ants = ants.from_numpy(fixed_scan) # unique ants object format
             moving_ants = ants.from_numpy(moving_scan)
             moving_mask_ants = ants.from_numpy(moving_mask)
 
             reg_affine = ants.registration(fixed_ants,
                                            moving_ants,
-                                           'Affine')
+                                           'Affine') #affine registration first
 
             affine_ants = ants.apply_transforms(fixed=fixed_ants,
                                                 moving=moving_ants,

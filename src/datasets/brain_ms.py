@@ -3,7 +3,6 @@ A longitudinal brain Multiple Sclerosis dataset, ISBI 2015
 "Longitudinal multiple sclerosis lesion segmentation: Resource and challenge"
 '''
 
-
 import itertools
 from typing import Literal
 from glob import glob
